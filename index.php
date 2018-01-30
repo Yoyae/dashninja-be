@@ -53,7 +53,7 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
 
     // The server should have the TLS client certificate information and the remote peer address
     // If not, just fail early
-    if (!array_key_exists("VERIFIED",$_SERVER) || ($_SERVER['VERIFIED'] != "SUCCESS")
+    /*if (!array_key_exists("VERIFIED",$_SERVER) || ($_SERVER['VERIFIED'] != "SUCCESS")
      || !array_key_exists("DN",$_SERVER) || (strlen($_SERVER['DN'])==0)
      || !array_key_exists("REMOTE_ADDR",$_SERVER) || (strlen($_SERVER['REMOTE_ADDR'])==0)) {
       $response = new Phalcon\Http\Response();
@@ -62,10 +62,11 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
       $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Missing/Wrong TLS client certificate')));
       $response->send();
       return false;
-    }
+    }*/
     // The server could not connect to the MySQL database
     // Means we are out of business
-    elseif ($mysqli->connect_errno != 0) {
+    //else
+    if ($mysqli->connect_errno != 0) {
       $response = new Phalcon\Http\Response();
       //Change the HTTP status
       $response->setStatusCode(503, "Service Unavailable");
@@ -85,9 +86,10 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
       $authinfo = $data["authinfo"];
     }
     else {
-      $sql = "SELECT HubId, HubEnabled, HubDescription FROM cmd_hub WHERE HubCertificate = '%s' AND HubIPv6 = inet6_aton('%s')";
+      /*$sql = "SELECT HubId, HubEnabled, HubDescription FROM cmd_hub WHERE HubCertificate = '%s' AND HubIPv6 = inet6_aton('%s')";
       $sqlx = sprintf($sql,$mysqli->real_escape_string($_SERVER['DN'])
-                          ,$mysqli->real_escape_string($_SERVER['REMOTE_ADDR']));
+                          ,$mysqli->real_escape_string($_SERVER['REMOTE_ADDR']));*/ 	
+	  $sqlx = "SELECT HubId, HubEnabled, HubDescription FROM cmd_hub WHERE HubCertificate = '0' AND HubIPv6 = '::1'";				  
       $result = $mysqli->query($sqlx);
       if ($result !== false) {
         // If the query is a success, we retrieve the first result (should be the only one)
@@ -109,7 +111,7 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
     }
     else {
       // If the query result is null, then the remote peer is NOT authorized
-      if (is_null($authinfo)) {
+      /*if (is_null($authinfo)) {
         $response = new Phalcon\Http\Response();
         $response->setStatusCode(401, "Unauthorized");
         $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('TLS client certificate did not match a known hub',$_SERVER['DN'],$_SERVER['REMOTE_ADDR'],$sql,$sqlx)));
@@ -124,8 +126,9 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
         $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Hub is disabled (Access denied)')));
         $response->send();
         return false;
-      }
+      }*/
       // We passed! Peer is authorized!
+	  $authinfo['HubId'] = 1;
     }
   }
 
@@ -137,6 +140,22 @@ $app->setEventsManager($eventManager);
 
 $router = $app->getRouter();
 $router->setUriSource(\Phalcon\Mvc\Router::URI_SOURCE_SERVER_REQUEST_URI);
+
+// Get API version
+$app->get('/version', function() {
+
+  //Create a response
+  $response = new Phalcon\Http\Response();
+
+  //Change the HTTP status
+  $response->setStatusCode(200, "OK");
+  $response->setJsonContent(array('status' => 'OK', 'data' => array("version" => array(
+      "api" => "0.0.1",
+      "phalcon" => Phalcon\Version::get(),
+      "php" => phpversion()
+  ))));
+  return $response;
+});
 
 // ============================================================================
 // BALANCES (for dmnbalance)
@@ -1254,7 +1273,7 @@ $app->get('/nodes', function() use ($app,&$mysqli) {
         $numnodes++;
         $nodes[$row['NodeName']] = $row;
       }
-
+	  
       //Change the HTTP status
       $response->setStatusCode(200, "OK");
       $response->setJsonContent(array('status' => 'OK', 'data' => $nodes));
@@ -2500,7 +2519,6 @@ $app->post('/portcheck', function() use ($app,&$mysqli) {
     $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Payload is wrong or CONTENT_LENGTH is missing')));
   }
   else {
-
     $sqlpc = array();
     foreach($payload as $node) {
       $mngeoip = geoip_record_by_name($node['NodeIP']);
@@ -2784,7 +2802,7 @@ $app->post('/versions', function() use ($app,&$mysqli) {
 $app->notFound(function () use ($app) {
     $response = new Phalcon\Http\Response();
     $response->setStatusCode(404, "Not Found");
-    $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Unknown end-point')));
+    $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Unknown private end-point')));
     $response->send();
 });
 
