@@ -51,19 +51,7 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
 
   if ($event->getType() == 'beforeHandleRoute') {
 
-    // The server should have the TLS client certificate information and the remote peer address
-    // If not, just fail early
-    /*if (!array_key_exists("VERIFIED",$_SERVER) || ($_SERVER['VERIFIED'] != "SUCCESS")
-     || !array_key_exists("DN",$_SERVER) || (strlen($_SERVER['DN'])==0)
-     || !array_key_exists("REMOTE_ADDR",$_SERVER) || (strlen($_SERVER['REMOTE_ADDR'])==0)) {
-      $response = new Phalcon\Http\Response();
-      $response->setStatusCode(401, "Unauthorized");
-      //Send errors to the client
-      $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Missing/Wrong TLS client certificate')));
-      $response->send();
-      return false;
-    }*/
-    // The server could not connect to the MySQL database
+  // The server could not connect to the MySQL database
     // Means we are out of business
     //else
     if ($mysqli->connect_errno != 0) {
@@ -76,29 +64,27 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
       return false;
     }
     // Now we need to check the peer is a known/allowed hub (via its client certificate and the remote address)
-    $cacheserial = sha1($_SERVER['DN']);
-    $cacheserial2 = sha1($_SERVER['REMOTE_ADDR']);
-    $cachefnam = CACHEFOLDER.sprintf("monoecininja_cmd_hubcheck_%s_%s",$cacheserial,$cacheserial2);
-    $cachevalid = (is_readable($cachefnam) && ((filemtime($cachefnam)+7200)>=time()));
-    if ($cachevalid) {
-      $data = unserialize(file_get_contents($cachefnam));
-      $result = $data["result"];
-      $authinfo = $data["authinfo"];
-    }
-    else {
-      /*$sql = "SELECT HubId, HubEnabled, HubDescription FROM cmd_hub WHERE HubCertificate = '%s' AND HubIPv6 = inet6_aton('%s')";
-      $sqlx = sprintf($sql,$mysqli->real_escape_string($_SERVER['DN'])
-                          ,$mysqli->real_escape_string($_SERVER['REMOTE_ADDR']));*/ 	
-	  $sqlx = "SELECT HubId, HubEnabled, HubDescription FROM cmd_hub WHERE HubCertificate = '0' AND HubIPv6 = '::1'";				  
-      $result = $mysqli->query($sqlx);
-      if ($result !== false) {
-        // If the query is a success, we retrieve the first result (should be the only one)
-        $authinfo = $result->fetch_assoc();
-        $result->close();
+
+    //Get the actual hub
+    $sqlx = "SELECT HubId, HubEnabled, HubCertificate, HubDescription FROM cmd_hub WHERE HubIPv6 = inet6_aton('127.0.0.1')";
+    $result = $mysqli->query($sqlx);
+    if ($result !== false) {
+      // If the query is a success, we retrieve the first result (should be the only one)
+      $authinfo = $result->fetch_assoc();
+      
+      //Check if remote IP is allowed hub - Allow localhost
+      if (($_SERVER['REMOTE_ADDR'] != '127.0.0.1') && (strpos($authinfo['HubCertificate'], $_SERVER['REMOTE_ADDR']) === false)) {
+         $response = new Phalcon\Http\Response();
+         $response->setStatusCode(401, "Unauthorized");
+         $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('IP client did not match a known hub',$_SERVER['REMOTE_ADDR'])));
+         $response->send();
+         $authinfo = false;
+         return false;
       }
-      $data = array("result" => $result, "authinfo" => $authinfo);
-      file_put_contents($cachefnam,serialize($data),LOCK_EX);
+      
+      $result->close();
     }
+
     // If the query failed, something is wrong with MySQL
     // Means we are out of business
     if ($result === false) {
@@ -111,10 +97,10 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
     }
     else {
       // If the query result is null, then the remote peer is NOT authorized
-      /*if (is_null($authinfo)) {
+      if (is_null($authinfo)) {
         $response = new Phalcon\Http\Response();
         $response->setStatusCode(401, "Unauthorized");
-        $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('TLS client certificate did not match a known hub',$_SERVER['DN'],$_SERVER['REMOTE_ADDR'],$sql,$sqlx)));
+        $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('TLS client certificate did not match a known hub',$_SERVER['DN'],$_SERVER['REMOTE_ADDR'])));
         $response->send();
         $authinfo = false;
         return false;
@@ -126,12 +112,10 @@ $eventManager->attach('micro', function($event, $app) use ($mysqli) {
         $response->setJsonContent(array('status' => 'ERROR', 'messages' => array('Hub is disabled (Access denied)')));
         $response->send();
         return false;
-      }*/
+      }
       // We passed! Peer is authorized!
-	  $authinfo['HubId'] = 1;
     }
   }
-
 });
 
 //Create and bind the DI to the application
